@@ -1,497 +1,506 @@
-# Design Document: ReelSafe AI
+# Design Document: INTEGRI
 
 ## Overview
 
-ReelSafe AI is a client-side web application built with Next.js 15, shadcn/ui, and Tailwind CSS that provides instant AI-powered content analysis and optimization for Indian digital creators. The system processes user captions through a three-step workflow: content analysis with color-coded safety assessment, AI-powered rewriting with cultural intelligence, and voice generation with engagement prediction.
+INTEGRI is a web-based AI platform that provides comprehensive content verification and risk assessment for digital content creators in India. The system analyzes submitted content (text or video with captions) through multiple AI components and generates a visual "Content Risk Passport" that explains potential risks without censoring creativity.
 
-The architecture follows a frontend-only approach with direct API integrations to external services (LLM APIs, TTS services, fact-checking APIs) while maintaining graceful fallbacks for demo reliability. All processing happens client-side with no persistent data storage, ensuring privacy and rapid deployment.
+The platform follows a microservices architecture with a React-based frontend, Node.js/Express backend API, and specialized AI analysis services. The system emphasizes explainable AI principles, ensuring every assessment includes transparent reasoning and educational context.
 
 ## Architecture
 
-### System Architecture
+### High-Level Architecture
 
 ```mermaid
 graph TB
-    subgraph "Client Browser"
-        UI[Next.js 15 UI Layer]
-        SM[State Management]
-        API[API Integration Layer]
-        CACHE[Client Cache]
+    subgraph "Frontend Layer"
+        UI[React Web Application]
+        Upload[File Upload Component]
+        Passport[Risk Passport Viewer]
     end
     
-    subgraph "External Services"
-        LLM[Grok/Llama 3 API]
-        TTS[ElevenLabs API]
-        FACT[Google Fact Check API]
-        BACKUP[Web Speech API]
+    subgraph "API Gateway Layer"
+        Gateway[Express.js API Gateway]
+        Auth[Authentication Service]
+        RateLimit[Rate Limiting]
     end
     
-    subgraph "Fallback System"
-        MOCK[Mock Responses]
-        LOCAL[Local TTS]
+    subgraph "Core Services"
+        ContentService[Content Processing Service]
+        AnalysisOrchestrator[Analysis Orchestrator]
+        PassportGenerator[Passport Generator Service]
     end
     
-    UI --> SM
-    SM --> API
-    API --> LLM
-    API --> TTS
-    API --> FACT
-    API --> BACKUP
-    API --> MOCK
-    API --> LOCAL
+    subgraph "AI Analysis Services"
+        ContextAnalyzer[Context Integrity Analyzer]
+        SafetyClassifier[Safety Classifier]
+        CulturalAnalyzer[Cultural Sensitivity Analyzer]
+        FactChecker[Fact Checker]
+        LLMService[LLM Service]
+    end
     
-    CACHE --> API
+    subgraph "Data Layer"
+        ContentStore[Content Storage]
+        AnalysisCache[Analysis Results Cache]
+        ConfigDB[Configuration Database]
+    end
+    
+    UI --> Gateway
+    Gateway --> ContentService
+    ContentService --> AnalysisOrchestrator
+    AnalysisOrchestrator --> ContextAnalyzer
+    AnalysisOrchestrator --> SafetyClassifier
+    AnalysisOrchestrator --> CulturalAnalyzer
+    AnalysisOrchestrator --> FactChecker
+    AnalysisOrchestrator --> PassportGenerator
+    ContentService --> ContentStore
+    AnalysisOrchestrator --> AnalysisCache
 ```
 
-### Component Architecture
+### Service Responsibilities
 
-```mermaid
-graph TD
-    APP[App Component]
-    
-    subgraph "Core Components"
-        INPUT[Caption Input Form]
-        ANALYZER[Content Analyzer]
-        REWRITER[AI Rewriter]
-        VOICE[Voice Generator]
-        PREDICTOR[Engagement Predictor]
-        CULTURAL[Cultural Intelligence]
-    end
-    
-    subgraph "UI Components"
-        RESULTS[Results Display]
-        LOADING[Loading States]
-        ERROR[Error Handling]
-        COPY[Copy/Download Actions]
-    end
-    
-    APP --> INPUT
-    INPUT --> ANALYZER
-    ANALYZER --> REWRITER
-    ANALYZER --> CULTURAL
-    REWRITER --> VOICE
-    REWRITER --> PREDICTOR
-    
-    ANALYZER --> RESULTS
-    REWRITER --> RESULTS
-    VOICE --> RESULTS
-    PREDICTOR --> RESULTS
-    
-    RESULTS --> COPY
-    APP --> LOADING
-    APP --> ERROR
-```
+**Frontend Layer:**
+- Content submission interface with drag-and-drop support
+- Real-time progress tracking during analysis
+- Interactive Content Risk Passport visualization
+- Creator mode switching (Beginner/Advanced)
+- PDF/image export functionality
+
+**API Gateway:**
+- Request routing and load balancing
+- Authentication and session management
+- Rate limiting and abuse prevention
+- Request/response logging and monitoring
+
+**Content Processing Service:**
+- File upload handling and validation
+- Content format conversion and preprocessing
+- Temporary storage management with automatic cleanup
+- Content metadata extraction
+
+**Analysis Orchestrator:**
+- Coordinates multiple AI analysis services
+- Manages analysis workflow and dependencies
+- Aggregates results from individual analyzers
+- Implements timeout and retry logic
+
+**AI Analysis Services:**
+- Independent, specialized analysis components
+- Stateless design for horizontal scaling
+- Standardized input/output interfaces
+- Confidence scoring and uncertainty handling
 
 ## Components and Interfaces
 
-### Core Components
+### Content Processing Pipeline
 
-#### ContentAnalyzer Component
-**Purpose**: Analyzes caption content and assigns safety color codes
-**Inputs**: 
-- `caption: string` - User-provided caption text
-- `ageGroup: '10-13' | '14-17' | '18+'` - Target age demographic
-- `language: 'hindi' | 'english'` - Content language
+```mermaid
+sequenceDiagram
+    participant Creator
+    participant Frontend
+    participant API
+    participant ContentService
+    participant Orchestrator
+    participant AIServices
+    participant PassportGen
+    
+    Creator->>Frontend: Submit content
+    Frontend->>API: POST /api/content/analyze
+    API->>ContentService: Process upload
+    ContentService->>Orchestrator: Trigger analysis
+    
+    par Parallel Analysis
+        Orchestrator->>AIServices: Context integrity check
+        Orchestrator->>AIServices: Safety classification
+        Orchestrator->>AIServices: Cultural sensitivity
+        Orchestrator->>AIServices: Fact checking
+    end
+    
+    AIServices-->>Orchestrator: Analysis results
+    Orchestrator->>PassportGen: Generate passport
+    PassportGen-->>API: Content Risk Passport
+    API-->>Frontend: Analysis complete
+    Frontend-->>Creator: Display passport
+```
 
-**Outputs**:
-- `safetyScore: 'GREEN' | 'YELLOW' | 'RED'` - Color-coded safety assessment
-- `explanation: string` - Human-readable explanation of the assessment
-- `suggestions: string[]` - Specific improvement recommendations
+### Core Interfaces
 
-**Interface**:
+**Content Submission Interface:**
+```typescript
+interface ContentSubmission {
+  contentType: 'text' | 'video';
+  content: string | File;
+  caption?: string;
+  creatorMode: 'beginner' | 'advanced';
+  language: 'hindi' | 'english';
+}
+```
+
+**Analysis Result Interface:**
 ```typescript
 interface AnalysisResult {
-  safetyScore: 'GREEN' | 'YELLOW' | 'RED';
-  explanation: string;
+  componentName: string;
+  confidence: number; // 0-100
+  riskScore: number; // 0-100
+  findings: Finding[];
+  reasoning: string[];
+  references: Reference[];
+}
+
+interface Finding {
+  category: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  description: string;
+  evidence: string[];
   suggestions: string[];
-  confidence: number;
-  processingTime: number;
-}
-
-interface ContentAnalyzer {
-  analyze(caption: string, ageGroup: AgeGroup, language: Language): Promise<AnalysisResult>;
 }
 ```
 
-#### AIRewriter Component
-**Purpose**: Generates optimized caption rewrites based on analysis results
-**Inputs**:
-- `originalCaption: string` - Original user caption
-- `analysisResult: AnalysisResult` - Results from content analysis
-- `culturalContext: CulturalContext` - Indian cultural intelligence data
-
-**Outputs**:
-- `rewrittenCaption: string` - AI-optimized caption
-- `improvements: string[]` - List of applied improvements
-- `hashtags: string[]` - Culturally relevant hashtags
-
-**Interface**:
+**Content Risk Passport Interface:**
 ```typescript
-interface RewriteResult {
-  rewrittenCaption: string;
-  improvements: string[];
-  hashtags: string[];
-  culturalEnhancements: string[];
-}
-
-interface AIRewriter {
-  rewrite(caption: string, analysis: AnalysisResult, cultural: CulturalContext): Promise<RewriteResult>;
-}
-```
-
-#### VoiceGenerator Component
-**Purpose**: Converts final caption to downloadable audio
-**Inputs**:
-- `text: string` - Final caption text for voice generation
-- `language: 'hindi' | 'english'` - Target language for speech
-- `voiceStyle: 'indian-accent' | 'neutral'` - Voice accent preference
-
-**Outputs**:
-- `audioBlob: Blob` - Generated audio file
-- `audioUrl: string` - Playable URL for browser
-- `duration: number` - Audio duration in seconds
-
-**Interface**:
-```typescript
-interface VoiceResult {
-  audioBlob: Blob;
-  audioUrl: string;
-  duration: number;
-  generationTime: number;
-}
-
-interface VoiceGenerator {
-  generate(text: string, language: Language, style: VoiceStyle): Promise<VoiceResult>;
-  fallbackGenerate(text: string, language: Language): Promise<VoiceResult>;
+interface ContentRiskPassport {
+  overallRiskLevel: 'low' | 'medium' | 'high' | 'critical';
+  ageAppropriateness: AgeAssessment;
+  culturalSensitivity: CulturalAssessment;
+  factualCredibility: FactualAssessment;
+  safetyIndicators: SafetyAssessment;
+  contextIntegrity: ContextAssessment;
+  platformRisks: PlatformRiskAssessment;
+  interventionRecommendation: InterventionRecommendation;
+  generatedAt: Date;
+  analysisId: string;
 }
 ```
 
-#### EngagementPredictor Component
-**Purpose**: Calculates engagement improvement predictions
-**Inputs**:
-- `originalCaption: string` - User's original caption
-- `optimizedCaption: string` - AI-rewritten caption
-- `culturalFactors: CulturalFactor[]` - Cultural relevance indicators
+### AI Service Interfaces
 
-**Outputs**:
-- `originalScore: number` - Predicted engagement for original (0-100)
-- `optimizedScore: number` - Predicted engagement for optimized (0-100)
-- `improvement: number` - Percentage improvement
-- `factors: EngagementFactor[]` - Contributing factors explanation
+**Context Integrity Analyzer:**
+- Analyzes video scene transitions and temporal consistency
+- Compares speech-to-text with provided captions
+- Detects potential out-of-context footage reuse
+- Identifies timeline inconsistencies in merged clips
 
-**Interface**:
-```typescript
-interface EngagementPrediction {
-  originalScore: number;
-  optimizedScore: number;
-  improvement: number;
-  factors: EngagementFactor[];
-}
+**Safety Classifier:**
+- Psychological harm detection (anxiety, depression, self-harm triggers)
+- Social harm identification (hate speech, discrimination, violence)
+- Content appropriateness scoring across age groups
+- Harm severity classification with confidence levels
 
-interface EngagementFactor {
-  name: string;
-  impact: number;
-  explanation: string;
-}
+**Cultural Sensitivity Analyzer:**
+- Indian cultural context evaluation
+- Regional sensitivity assessment across major Indian states
+- Religious and community sensitivity scoring
+- Festival, tradition, and custom appropriateness checking
 
-interface EngagementPredictor {
-  predict(original: string, optimized: string, cultural: CulturalFactor[]): EngagementPrediction;
-}
-```
-
-#### CulturalIntelligence Component
-**Purpose**: Provides India-specific cultural context and enhancements
-**Inputs**:
-- `caption: string` - Caption text to analyze
-- `currentDate: Date` - For festival/seasonal relevance
-
-**Outputs**:
-- `detectedElements: CulturalElement[]` - Identified cultural references
-- `suggestions: CulturalSuggestion[]` - Enhancement recommendations
-- `warnings: CulturalWarning[]` - Potential sensitivity issues
-
-**Interface**:
-```typescript
-interface CulturalElement {
-  type: 'festival' | 'bollywood' | 'cricket' | 'regional' | 'slang';
-  name: string;
-  relevance: number;
-  context: string;
-}
-
-interface CulturalSuggestion {
-  type: 'hashtag' | 'reference' | 'timing';
-  suggestion: string;
-  reasoning: string;
-}
-
-interface CulturalIntelligence {
-  analyze(caption: string, date: Date): CulturalContext;
-  enhance(caption: string, context: CulturalContext): CulturalSuggestion[];
-}
-```
-
-### API Integration Layer
-
-#### LLMService
-**Purpose**: Handles communication with Grok/Llama 3 APIs for content analysis and rewriting
-**Methods**:
-- `analyzeContent()` - Content safety and quality analysis
-- `rewriteCaption()` - AI-powered caption optimization
-- `factCheck()` - Basic fact verification
-
-#### TTSService
-**Purpose**: Manages text-to-speech generation with fallback support
-**Primary**: ElevenLabs API for high-quality voice generation
-**Fallback**: Web Speech API for basic browser-based TTS
-**Methods**:
-- `generateVoice()` - Primary voice generation
-- `fallbackVoice()` - Browser-based backup
-
-#### MockService
-**Purpose**: Provides realistic mock responses for demo reliability
-**Methods**:
-- `getMockAnalysis()` - Pre-defined analysis results
-- `getMockRewrite()` - Sample rewritten captions
-- `getMockVoice()` - Sample audio files
+**Fact Checker:**
+- Claim extraction from text and speech content
+- Factual verification against trusted Indian sources
+- Confidence scoring with supporting evidence
+- Source credibility assessment and citation
 
 ## Data Models
 
-### Core Data Types
+### Content Storage Model
 
 ```typescript
-// User Input Types
-type AgeGroup = '10-13' | '14-17' | '18+';
-type Language = 'hindi' | 'english';
-type SafetyScore = 'GREEN' | 'YELLOW' | 'RED';
-
-// Main Application State
-interface AppState {
-  userInput: UserInput;
-  analysisResult: AnalysisResult | null;
-  rewriteResult: RewriteResult | null;
-  voiceResult: VoiceResult | null;
-  engagementPrediction: EngagementPrediction | null;
-  culturalContext: CulturalContext | null;
-  isLoading: boolean;
-  error: string | null;
-}
-
-interface UserInput {
-  caption: string;
-  ageGroup: AgeGroup;
-  language: Language;
-}
-
-// Cultural Intelligence Types
-interface CulturalContext {
-  detectedElements: CulturalElement[];
-  seasonalRelevance: SeasonalFactor[];
-  regionalContext: RegionalContext;
-  sensitivityWarnings: SensitivityWarning[];
-}
-
-interface SeasonalFactor {
-  event: string;
-  relevance: number;
-  suggestedHashtags: string[];
-  timing: 'current' | 'upcoming' | 'recent';
-}
-
-interface RegionalContext {
-  detectedRegion: string | null;
-  languageMix: LanguageMixture[];
-  culturalReferences: string[];
-}
-
-interface LanguageMixture {
-  language: string;
-  percentage: number;
-  examples: string[];
-}
-
-// API Response Types
-interface APIResponse<T> {
-  success: boolean;
-  data: T;
-  error?: string;
-  processingTime: number;
-  source: 'api' | 'mock' | 'fallback';
-}
-
-// Configuration Types
-interface APIConfig {
-  grokApiKey: string;
-  elevenLabsApiKey: string;
-  factCheckApiKey: string;
-  enableMockMode: boolean;
-  timeoutMs: number;
+interface StoredContent {
+  contentId: string;
+  contentType: 'text' | 'video';
+  originalFilename?: string;
+  fileSize?: number;
+  mimeType?: string;
+  textContent?: string;
+  extractedCaption?: string;
+  uploadedAt: Date;
+  creatorSessionId: string;
+  processingStatus: 'uploaded' | 'processing' | 'completed' | 'failed';
+  retentionExpiry: Date; // Auto-delete after analysis
 }
 ```
 
-### State Management
-
-The application uses React's built-in state management with custom hooks for complex state logic:
+### Analysis Results Model
 
 ```typescript
-// Custom hooks for state management
-const useReelSafeAI = () => {
-  const [state, setState] = useState<AppState>(initialState);
+interface AnalysisSession {
+  sessionId: string;
+  contentId: string;
+  creatorMode: 'beginner' | 'advanced';
+  language: 'hindi' | 'english';
+  startedAt: Date;
+  completedAt?: Date;
+  status: 'pending' | 'analyzing' | 'completed' | 'failed';
   
-  const processCaption = async (input: UserInput) => {
-    // Orchestrates the full processing pipeline
-  };
+  // Individual component results
+  contextIntegrityResult?: AnalysisResult;
+  safetyClassificationResult?: AnalysisResult;
+  culturalSensitivityResult?: AnalysisResult;
+  factCheckingResult?: AnalysisResult;
   
-  const resetState = () => {
-    // Clears all results for new input
-  };
+  // Aggregated results
+  overallRiskLevel?: 'low' | 'medium' | 'high' | 'critical';
+  riskPassport?: ContentRiskPassport;
   
-  return { state, processCaption, resetState };
-};
-
-const useCulturalIntelligence = () => {
-  // Manages cultural context and enhancements
-};
-
-const useVoiceGeneration = () => {
-  // Handles TTS with fallback logic
-};
+  // Error handling
+  errors: AnalysisError[];
+  retryCount: number;
+}
 ```
 
-Now I need to use the prework tool to analyze the acceptance criteria before writing the Correctness Properties section.
+### Configuration Model
 
-<function_calls>
-<invoke name="prework">
-<parameter name="featureName">reelsafe-ai
+```typescript
+interface AnalysisConfiguration {
+  riskThresholds: {
+    lowToMedium: number;
+    mediumToHigh: number;
+    highToCritical: number;
+  };
+  
+  componentWeights: {
+    contextIntegrity: number;
+    safetyClassification: number;
+    culturalSensitivity: number;
+    factualCredibility: number;
+  };
+  
+  interventionRules: {
+    lowRisk: InterventionRule;
+    mediumRisk: InterventionRule;
+    highRisk: InterventionRule;
+    criticalRisk: InterventionRule;
+  };
+  
+  culturalContext: {
+    region: string;
+    festivals: string[];
+    sensitivities: string[];
+    languages: string[];
+  };
+}
+```
+
+### User Session Model
+
+```typescript
+interface CreatorSession {
+  sessionId: string;
+  createdAt: Date;
+  lastActiveAt: Date;
+  creatorMode: 'beginner' | 'advanced';
+  preferredLanguage: 'hindi' | 'english';
+  submissionCount: number;
+  analysisHistory: string[]; // Analysis session IDs
+}
+```
 
 ## Correctness Properties
 
 *A property is a characteristic or behavior that should hold true across all valid executions of a system—essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
 
-Based on the prework analysis and property reflection, the following properties ensure ReelSafe AI operates correctly across all inputs and scenarios:
+### Property 1: Content Risk Passport Completeness
+*For any* valid content submission, the generated Content Risk Passport should contain all required components: overall risk level (Low/Medium/High/Critical), age appropriateness assessment, cultural sensitivity analysis, factual credibility score with references, psychological and social harm indicators, platform risk likelihood, and explainable AI reasoning for each score.
+**Validates: Requirements 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8**
 
-### Property 1: Content Analysis Classification Completeness
-*For any* user caption and age group combination, the Content_Analyzer should return exactly one of the three valid safety scores (GREEN, YELLOW, RED) within 3 seconds, and always include a human-readable explanation for the classification.
-**Validates: Requirements 1.1, 1.5**
+### Property 2: Analysis Performance Guarantee
+*For any* content submission under system limits (text ≤10,000 chars, video ≤100MB), the system should generate a complete Content Risk Passport within 30 seconds.
+**Validates: Requirements 1.1**
 
-### Property 2: Safety Score Display Requirements
-*For any* analysis result, the display should include all required elements specific to the safety score: GREEN results should show "Viral Ready 🔥" with hashtags and posting time, YELLOW results should show "Polish This ✏️" with rewrite suggestions and confidence score, and RED results should show "Risky ⚠️" with safer alternatives and risk explanations.
-**Validates: Requirements 1.2, 1.3, 1.4**
+### Property 3: Context Integrity Detection
+*For any* video content with multiple scenes or merged clips, the Context Integrity Analyzer should detect and flag potential narrative mismatches, timeline inconsistencies, and provide specific explanations when misleading context is identified.
+**Validates: Requirements 2.1, 2.4, 2.5**
 
-### Property 3: Adult Content Post-Anyway Option
-*For any* content classified as RED when the user age group is 18+, the system should provide an optional "Post Anyway" functionality that allows user override.
-**Validates: Requirements 1.6**
+### Property 4: Speech-Caption Consistency Verification
+*For any* video content with both speech and captions, the Context Integrity Analyzer should compare speech-to-text with provided captions and flag inconsistencies with confidence scores between 0-100.
+**Validates: Requirements 2.2, 2.6**
 
-### Property 4: Voice Generation Completeness
-*For any* caption text and language selection, the Voice_Generator should produce playable audio within 5 seconds, provide the audio in a downloadable web format, and support both Hindi and English language generation with appropriate pronunciation.
-**Validates: Requirements 2.1, 2.2, 2.3, 2.4**
+### Property 5: Archived Content Detection
+*For any* content that reuses old or archived footage, the Context Integrity Analyzer should flag potential out-of-context usage and provide explanations for the detection.
+**Validates: Requirements 2.3**
 
-### Property 5: Engagement Prediction Completeness
-*For any* original and optimized caption pair, the Engagement_Predictor should calculate scores for both versions, display a percentage improvement, consider hook strength/emoji usage/caption length in calculations, and present results in a clear before/after comparison format.
-**Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5**
+### Property 6: Risk-Based Intervention Logic
+*For any* analyzed content, the Intervention Engine should apply appropriate recommendations based on risk level: Low (allow publishing), Medium (warnings + suggestions), High (restricted sharing + disclaimers), Critical (block + alternatives with minimum 3 suggestions).
+**Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.6**
 
-### Property 6: Cultural Intelligence Analysis
-*For any* caption containing Indian cultural references (festivals, Bollywood, cricket, regional slang), the Cultural_Intelligence should detect these elements, suggest appropriate hashtags, identify potential cultural sensitivities, and explain all applied enhancements with reasoning.
-**Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5**
+### Property 7: Creator Mode Adaptation
+*For any* creator session, when Beginner mode is selected, the system should provide detailed explanations and educational tooltips, while Advanced mode should provide condensed information with expandable details and style-preserving suggestions.
+**Validates: Requirements 4.1, 4.2, 4.4, 4.5**
 
-### Property 7: Age-Appropriate Content Handling
-*For any* content and age group combination, the system should apply age-appropriate guidelines, provide safer alternatives for inappropriate content, explain specific concerns with educational guidance, and enforce stricter guidelines for younger age groups (10-13) compared to adult content (18+).
-**Validates: Requirements 5.1, 5.2, 5.3, 5.4**
+### Property 8: Mode Switching Flexibility
+*For any* active creator session, the system should allow switching between Beginner and Advanced modes at any time without losing session state.
+**Validates: Requirements 4.3**
 
-### Property 8: Three-Click Workflow Automation
-*For any* complete user input (caption, age group, language), the system should automatically trigger analysis and optimization, display all results on a single screen, and provide one-click copy and download functionality for outputs.
-**Validates: Requirements 6.2, 6.3, 6.4, 6.5**
+### Property 9: Input Validation and Format Support
+*For any* content submission, the system should accept valid formats (text ≤10,000 chars, video ≤100MB in MP4/AVI/MOV) and reject invalid formats with descriptive error messages.
+**Validates: Requirements 5.1, 5.2, 5.5**
 
-### Property 9: Session Data Isolation
-*For any* browser session, refreshing the page should clear all user data, and no user information should persist between sessions, ensuring complete privacy and data isolation.
-**Validates: Requirements 7.2**
+### Property 10: Language Processing Support
+*For any* content in Hindi or English, the system should successfully process and analyze the content, including caption extraction from video submissions.
+**Validates: Requirements 5.3, 5.4**
 
-### Property 10: API Failure Graceful Handling
-*For any* external API failure scenario, the system should activate appropriate fallback mechanisms (mock responses, Web Speech API, etc.) and continue functioning without crashes or data loss.
-**Validates: Requirements 7.4, 8.3**
+### Property 11: Content Privacy and Cleanup
+*For any* submitted content, the system should automatically delete files after analysis completion to maintain privacy.
+**Validates: Requirements 5.6**
 
-### Property 11: Demo Performance Reliability
-*For any* demo scenario, the complete workflow should execute within 45 seconds, handle all inputs without crashes, provide consistent responses for repeated inputs, and display appropriate loading states during external resource fetching.
-**Validates: Requirements 8.1, 8.2, 8.4, 8.5**
+### Property 12: Safety Classification Comprehensiveness
+*For any* content, the Safety Classifier should identify and score both psychological harm indicators (anxiety triggers, depression content, self-harm references) and social harm indicators (hate speech, discrimination, violence promotion).
+**Validates: Requirements 6.1, 6.2**
+
+### Property 13: Cultural Sensitivity Analysis
+*For any* content, the Cultural Sensitivity Analyzer should evaluate content against Indian cultural norms and regional sensitivities, providing context-appropriate assessments.
+**Validates: Requirements 6.3**
+
+### Property 14: Fact Checking with References
+*For any* content containing factual claims, the Fact Checker should verify claims and provide confidence scores with supporting source references.
+**Validates: Requirements 6.4**
+
+### Property 15: Score Aggregation Consistency
+*For any* content analysis, the system should combine individual AI component scores into an overall Risk Level using consistent weighted algorithms.
+**Validates: Requirements 6.5**
+
+### Property 16: Uncertainty Handling
+*For any* AI analysis with low confidence, the system should indicate confidence levels and trigger human review requests for edge cases.
+**Validates: Requirements 6.6**
+
+### Property 17: Comprehensive Explainability
+*For any* AI assessment or recommendation, the system should provide specific explanations, reasoning chains, highlight contributing content elements, and cite relevant guidelines or research.
+**Validates: Requirements 7.1, 7.2, 7.3, 7.6**
+
+### Property 18: Educational Context Provision
+*For any* identified risk pattern, the system should provide educational context explaining why the pattern is considered risky.
+**Validates: Requirements 7.4**
+
+### Property 19: Interactive Explanation Interface
+*For any* Content Risk Passport, clickable explanations should expand to show detailed AI reasoning.
+**Validates: Requirements 7.5**
+
+### Property 20: Responsive Interface Functionality
+*For any* device type (desktop or mobile), the web interface should be responsive and provide drag-and-drop file upload functionality.
+**Validates: Requirements 8.1, 8.3**
+
+### Property 21: Passport Export and Sharing
+*For any* generated Content Risk Passport, the system should display it as a visually appealing artifact and allow download in PDF or image format.
+**Validates: Requirements 8.4, 8.5**
+
+### Property 22: Real-time Progress and Session Management
+*For any* content analysis session, the system should provide real-time progress indicators and maintain session state allowing multiple submissions per session.
+**Validates: Requirements 8.6, 8.7**
 
 ## Error Handling
 
-### API Error Management
-The system implements a three-tier error handling strategy:
+### Content Processing Errors
 
-1. **Primary API Failure**: Automatic retry with exponential backoff (max 3 attempts)
-2. **Secondary Fallback**: Switch to alternative service (Web Speech API for TTS)
-3. **Mock Mode**: Use pre-defined responses to maintain demo functionality
+**File Upload Failures:**
+- Invalid file formats trigger descriptive error messages
+- File size exceeding limits (100MB for video, 10,000 chars for text) returns specific size violation errors
+- Corrupted files are detected and rejected with appropriate messaging
+- Network interruptions during upload trigger retry mechanisms with exponential backoff
 
-### User Experience Error Handling
-- **Network Errors**: Display friendly messages with retry options
-- **Timeout Errors**: Show progress indicators and allow user cancellation
-- **Invalid Input**: Provide real-time validation with helpful suggestions
-- **Service Unavailable**: Gracefully degrade to available features
+**Content Analysis Failures:**
+- Individual AI service failures don't block entire analysis - partial results are provided with clear indicators of missing components
+- Timeout handling for long-running analysis with graceful degradation
+- Language detection failures default to English processing with user notification
+- Caption extraction failures for video content proceed with video-only analysis
 
-### Error Recovery Patterns
-```typescript
-interface ErrorHandler {
-  handleAPIError(error: APIError): Promise<FallbackResponse>;
-  handleNetworkError(error: NetworkError): UserFriendlyMessage;
-  handleValidationError(error: ValidationError): ValidationGuidance;
-}
+### AI Service Error Handling
 
-// Example error recovery flow
-const processWithFallback = async (input: UserInput) => {
-  try {
-    return await primaryAPI.process(input);
-  } catch (primaryError) {
-    try {
-      return await fallbackAPI.process(input);
-    } catch (fallbackError) {
-      return mockService.getResponse(input);
-    }
-  }
-};
-```
+**Service Unavailability:**
+- Circuit breaker pattern prevents cascading failures
+- Fallback to cached results when available
+- Queue-based retry system for transient failures
+- User notification of service degradation with estimated recovery time
+
+**Analysis Confidence Issues:**
+- Low confidence scores trigger human review workflows
+- Uncertain results are clearly marked in the Content Risk Passport
+- Multiple analysis attempts with different parameters for edge cases
+- Escalation paths for content that cannot be reliably analyzed
+
+### User Experience Error Recovery
+
+**Session Management:**
+- Automatic session recovery after network disconnections
+- Progress preservation during browser refresh or navigation
+- Clear error messaging with actionable next steps
+- Graceful degradation when non-critical features fail
+
+**Data Integrity:**
+- Validation of all user inputs before processing
+- Sanitization of uploaded content to prevent security issues
+- Backup analysis results to prevent data loss
+- Audit trails for all analysis decisions and user interactions
 
 ## Testing Strategy
 
 ### Dual Testing Approach
-ReelSafe AI requires both unit testing and property-based testing for comprehensive coverage:
 
-**Unit Tests** focus on:
-- Specific examples of cultural references (Diwali, Bollywood stars, cricket matches)
-- Edge cases like empty captions, special characters, very long text
-- Integration points between components
-- Error conditions and API failures
-- Mock service responses for demo scenarios
+The INTEGRI system requires comprehensive testing through both unit tests and property-based tests to ensure correctness across all scenarios:
 
-**Property Tests** focus on:
-- Universal properties that hold for all inputs
-- Comprehensive input coverage through randomization
-- Performance characteristics across different input sizes
-- Cross-language consistency between Hindi and English processing
+**Unit Tests:**
+- Focus on specific examples and edge cases for each AI component
+- Test integration points between services
+- Validate error conditions and recovery mechanisms
+- Test specific cultural sensitivity scenarios relevant to Indian context
+- Verify exact behavior for known problematic content patterns
+
+**Property-Based Tests:**
+- Verify universal properties across all possible inputs
+- Test system behavior with randomly generated content
+- Validate consistency of risk scoring algorithms
+- Ensure explainability requirements are met for all analysis results
+- Test performance guarantees across varying content sizes and types
 
 ### Property-Based Testing Configuration
-- **Testing Library**: fast-check for TypeScript/JavaScript property-based testing
-- **Minimum Iterations**: 100 iterations per property test
-- **Test Tagging**: Each property test references its design document property
-- **Tag Format**: `Feature: reelsafe-ai, Property {number}: {property_text}`
 
-### Testing Implementation Requirements
-Each correctness property must be implemented as a single property-based test that:
-1. Generates random inputs within the specified domain
-2. Executes the system functionality
-3. Verifies the property holds for all generated inputs
-4. Reports any counterexamples that violate the property
+**Testing Framework:** Use fast-check for JavaScript/TypeScript property-based testing
+**Test Configuration:**
+- Minimum 100 iterations per property test to ensure comprehensive coverage
+- Each property test must reference its corresponding design document property
+- Tag format: **Feature: integri, Property {number}: {property_text}**
 
-### Performance Testing
-- **Load Testing**: Verify system handles multiple concurrent users during demos
-- **API Timeout Testing**: Ensure graceful handling of slow external services
-- **Memory Testing**: Verify no memory leaks during extended usage
-- **Browser Compatibility**: Test across Chrome, Firefox, Safari, and Edge
+**Example Property Test Structure:**
+```typescript
+// Feature: integri, Property 1: Content Risk Passport Completeness
+test('Content Risk Passport contains all required components', () => {
+  fc.assert(fc.property(
+    contentGenerator(), // Generates random valid content
+    async (content) => {
+      const passport = await analyzeContent(content);
+      expect(passport.overallRiskLevel).toBeOneOf(['low', 'medium', 'high', 'critical']);
+      expect(passport.ageAppropriateness).toBeDefined();
+      expect(passport.culturalSensitivity).toBeDefined();
+      expect(passport.factualCredibility).toBeDefined();
+      expect(passport.safetyIndicators).toBeDefined();
+      expect(passport.platformRisks).toBeDefined();
+      expect(passport.explainableReasoning).toBeDefined();
+    }
+  ), { numRuns: 100 });
+});
+```
 
-### Cultural Content Testing
-- **Festival Calendar Testing**: Verify cultural intelligence recognizes current and upcoming Indian festivals
-- **Regional Language Testing**: Test Hindi-English code-mixing scenarios
-- **Sensitivity Testing**: Verify appropriate handling of religious and cultural content
-- **Bollywood Reference Testing**: Test recognition of current and classic Bollywood content
+### Testing Data and Scenarios
 
-The testing strategy ensures ReelSafe AI maintains reliability, cultural accuracy, and performance standards across all usage scenarios while providing comprehensive coverage of both functional requirements and user experience expectations.
+**Content Generation for Testing:**
+- Random text generation in Hindi and English
+- Synthetic video content with various scene combinations
+- Edge cases: empty content, maximum size content, special characters
+- Cultural context variations: different Indian regions, festivals, traditions
+- Fact-checking scenarios: verifiable claims, false claims, ambiguous statements
+
+**Performance Testing:**
+- Load testing with concurrent content submissions
+- Stress testing with maximum file sizes
+- Response time validation under various system loads
+- Memory usage monitoring during large content processing
+
+### Integration Testing
+
+**End-to-End Workflows:**
+- Complete content submission to passport generation flows
+- Creator mode switching during active sessions
+- Export functionality for generated passports
+- Error recovery and retry mechanisms
+
+**Service Integration:**
+- AI service coordination and result aggregation
+- Database consistency during concurrent operations
+- Cache invalidation and refresh strategies
+- Authentication and session management across services
